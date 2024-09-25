@@ -17,7 +17,9 @@ collections = db['reviews']
 @app.route('/summarize_reviews', methods=['GET'])
 def summarize_reviews(): 
 
-    reviews = collections.find({})
+    cafe = request.args.get('cafe')  # Get the cafe name from query parameters
+
+    reviews = collections.find({"cafe_name": cafe})
 
     #extracts the review descriptions 
     descriptions = " ".join([review['description'] for review in reviews if review['description'] != "No Desc."])
@@ -31,6 +33,7 @@ def summarize_reviews():
     #decode the summary
     summary = tokenizer.decode(summary_ids[0], skip_special_token = True)
 
+    print(summary)
     return jsonify({"summary": summary})
 
 
