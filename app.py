@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify 
 from transformers import BartTokenizer, BartForConditionalGeneration
 from pymongo import MongoClient
+import re
 
 app = Flask(__name__)
 
@@ -17,9 +18,13 @@ collections = db['reviews']
 @app.route('/summarize_reviews', methods=['GET'])
 def summarize_reviews(): 
 
-    cafe = request.args.get('cafe')  # Get the cafe name from query parameters
+    cafe = request.args.get('cafe', '')
+    
+    # Create a regex pattern that ignores spaces and is case-insensitive
+ 
+    
 
-    reviews = collections.find({"cafe_name": cafe})
+    reviews = collections.find({"cafeName": {"$regex": cafe, "$options": "i"}})
 
     #extracts the review descriptions 
     descriptions = " ".join([review['description'] for review in reviews if review['description'] != "No Desc."])
@@ -28,13 +33,15 @@ def summarize_reviews():
     inputs = tokenizer.encode("summarize: " + descriptions, return_tensors = "pt", max_length = 1024, truncation = True)
 
     #Generate the summary using BART
-    summary_ids = model.generate(inputs, max_length=250, min_length = 40, length_penalty=2.0, num_beams=4, early_stopping = True )
+    summary_ids = model.generate(inputs, max_length=250, min_length = 80, length_penalty=2.0, num_beams=4, early_stopping = True )
 
     #decode the summary
-    summary = tokenizer.decode(summary_ids[0], skip_special_token = True)
-
-    print(summary)
+    summary = tokenizer.decode(summary_ids[0], skip_special_tokens = True)
+    
+    
     return jsonify({"summary": summary})
+
+
 
 
 
