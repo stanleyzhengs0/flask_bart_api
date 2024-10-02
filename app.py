@@ -1,48 +1,66 @@
 from flask import Flask, request, jsonify 
-from transformers import BartTokenizer, BartForConditionalGeneration
+from transformers import BartTokenizer, BartForConditionalGeneration, BertTokenizer, BertForSequenceClassification
 from pymongo import MongoClient
-import re
+import torch
 
 app = Flask(__name__)
 
-#Load the Bart Model and Tokenizers
-model = BartForConditionalGeneration.from_pretrained('facebook/bart-large-cnn')
-tokenizer = BartTokenizer.from_pretrained('facebook/bart-large-cnn')
+#Initialize BERT Tokenizer and model
+Bert_tokenizer = BertTokenizer.from_pretrained('nlptown/bert-base-multilingual-uncased-sentiment')
+Bert_model = BertForSequenceClassification.from_pretrained('nlptown/bert-base-multilingual-uncased-sentiment')
+
+#Initialize BART Tokenizer and model
+Bart_model = BartForConditionalGeneration.from_pretrained('facebook/bart-large-cnn')
+Bart_tokenizer = BartTokenizer.from_pretrained('facebook/bart-large-cnn')
 
 #connect to MongoDB
 client = MongoClient("mongodb+srv://stanleyzhengs:wirepint13sT@atlascluster.jjgxbm5.mongodb.net/?retryWrites=true&w=majority&appName=AtlasCluster")
 db = client["test"]
 collections = db['reviews']
 
+def classify_reviews(review):
+    inputs = Bert_tokenizer(review, return_tensors = "pt", truncation = True, padding = True)
+    with torch.no_grad():
+        outputs = Bert_model(**inputs)
+
+    logits = outputs.logits
+
+    predicted_class = torch.argmax(logits, dim=1).item()
+
+    labels = ['very negative', 'negative', 'neutral', 'positive', 'very positive']
+    sentiment = labels[predicted_class]
+    return sentiment
+
+def summarize_reviews(combined_reviews): 
+    inputs = Bart_tokenizer(combined_reviews, return_tensors="pt", max_length=1024, truncation=True)
+    summary_ids = Bart_model.generate(inputs['input_ids'], num_beams=4, max_length=150, early_stopping=True)
+    summary = Bart_tokenizer.decode(summary_ids[0], skip_special_tokens=True)
+    return summary
+
 
 @app.route('/summarize_reviews', methods=['GET'])
-def summarize_reviews(): 
 
+def cafe_review_summary():
     cafe = request.args.get('cafe', '')
-    
-    # Create a regex pattern that ignores spaces and is case-insensitive
- 
-    
-
     reviews = collections.find({"cafeName": {"$regex": cafe, "$options": "i"}})
 
-    #extracts the review descriptions 
-    descriptions = " ".join([review['description'] for review in reviews if review['description'] != "No Desc."])
+    positive_reviews = []
+    negative_reviews = [] 
 
-    #tokenize the input for BART
-    inputs = tokenizer.encode("summarize: " + descriptions, return_tensors = "pt", max_length = 1024, truncation = True)
+    for review in reviews: 
+        description = review['description']    
+        sentiment = classify_reviews(description)
 
-    #Generate the summary using BART
-    summary_ids = model.generate(inputs, max_length=250, min_length = 80, length_penalty=2.0, num_beams=4, early_stopping = True )
-
-    #decode the summary
-    summary = tokenizer.decode(summary_ids[0], skip_special_tokens = True)
-    
-    
-    return jsonify({"summary": summary})
+        if description != "No Desc.":
+            if sentiment in ['positive', 'very positive']:
+                positive_reviews.append(description)
+            else:
+                negative_reviews.append(description)
 
 
-
+    combined_reviews = " ".join(positive_reviews + negative_reviews)
+    summary = summarize_reviews(combined_reviews)
+    return jsonify({'summary': summary})
 
 
 if __name__ == '__main__':
