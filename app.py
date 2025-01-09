@@ -13,11 +13,12 @@ Bert_model = BertForSequenceClassification.from_pretrained('nlptown/bert-base-mu
 Bart_model = BartForConditionalGeneration.from_pretrained('facebook/bart-large-cnn')
 Bart_tokenizer = BartTokenizer.from_pretrained('facebook/bart-large-cnn')
 
-#connect to MongoDB
+#connect to MongoDB (use to fetch reviews from database)
 client = MongoClient("mongodb+srv://stanleyzhengs:wirepint13sT@atlascluster.jjgxbm5.mongodb.net/?retryWrites=true&w=majority&appName=AtlasCluster")
 db = client["test"]
 collections = db['reviews']
 
+#Sentiment Analysis
 def classify_reviews(review):
     inputs = Bert_tokenizer(review, return_tensors = "pt", truncation = True, padding = True)
     with torch.no_grad():
@@ -31,9 +32,10 @@ def classify_reviews(review):
     sentiment = labels[predicted_class]
     return sentiment
 
+#Function that generates a summary
 def summarize_reviews(combined_reviews): 
     inputs = Bart_tokenizer(combined_reviews, return_tensors="pt", max_length=1024, truncation=True)
-    summary_ids = Bart_model.generate(inputs['input_ids'], num_beams=4, max_length=150, early_stopping=True)
+    summary_ids = Bart_model.generate(inputs['input_ids'], num_beams=4, max_length=150, min_length = 85, early_stopping=True)
     summary = Bart_tokenizer.decode(summary_ids[0], skip_special_tokens=True)
     return summary
 
